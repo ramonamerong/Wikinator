@@ -62,5 +62,5 @@
 
 <h3>Contact</h3>
 <p>
-  Please open an issue on this github or contact me on ramonamerong@live.nl in case you have found any bugs or if you want to provide suggestions for future additions!
+  Please open an issue on this GitHub or contact me on ramonamerong@live.nl in case you have found any bugs or if you want to provide suggestions for future additions!
 </p>
