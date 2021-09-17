@@ -1,0 +1,37 @@
+{
+  "username": "Wikinator",
+  "avatar": "images/avatar.png",
+  "prefix": "-",
+  "token": "",
+  "status": "Browsing wikis | -help",
+  "commands": {
+    "errorMsg": "The command couldn't be executed.",
+    "wiki": {
+      "url": "https://en.wikipedia.org",
+      "apiPaths": ["/w/api.php", "/api.php"],
+      "pagePath": "/wiki/",
+      "searchPath": "/w/index.php?search=",
+      "logo": "https://en.wikipedia.org/static/images/project-logos/enwiki.png",
+      "titleRedirects": "resolve",
+      "titleSearchProfile": "fuzzy",
+      "titleSearchNamespaces": "0",
+      "pageRedirects": true,
+      "embed": {
+        "maxResults": 200,
+        "maxResultsPerEmbed": 10,
+        "maxFieldLinesPerEmbed": 10,
+        "maxFieldCharPerEmbed": 1023,
+        "maxDescCharPerEmbed": 1000,
+        "expireTime": 300000,
+        "expireMsg": "[EXPIRED]",
+        "color": "0x4287f5"
+      }
+    }
+  },
+  "database": {
+    "host": "localhost",
+    "user" : "",
+    "password" : "",
+    "database" : ""
+  }
+}
