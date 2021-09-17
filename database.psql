@@ -1,0 +1,115 @@
+--
+-- PostgreSQL database dump
+--
+
+-- Dumped from database version 11.7 (Debian 11.7-0+deb10u1)
+-- Dumped by pg_dump version 11.7 (Debian 11.7-0+deb10u1)
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+SET default_tablespace = '';
+
+SET default_with_oids = false;
+
+--
+-- Name: guild; Type: TABLE; Schema: public; Owner: wiki
+--
+
+CREATE TABLE public.guild (
+    id character varying(18) NOT NULL
+);
+
+
+ALTER TABLE public.guild OWNER TO wiki;
+
+--
+-- Name: wiki; Type: TABLE; Schema: public; Owner: wiki
+--
+
+CREATE TABLE public.wiki (
+    abbreviation character varying NOT NULL,
+    url character varying NOT NULL,
+    guild_id character varying(18) NOT NULL,
+    logo character varying NOT NULL,
+    name character varying NOT NULL,
+    api_path character varying NOT NULL,
+    id integer NOT NULL
+);
+
+
+ALTER TABLE public.wiki OWNER TO wiki;
+
+--
+-- Name: wiki_id_seq; Type: SEQUENCE; Schema: public; Owner: wiki
+--
+
+CREATE SEQUENCE public.wiki_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.wiki_id_seq OWNER TO wiki;
+
+--
+-- Name: wiki_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: wiki
+--
+
+ALTER SEQUENCE public.wiki_id_seq OWNED BY public.wiki.id;
+
+
+--
+-- Name: wiki id; Type: DEFAULT; Schema: public; Owner: wiki
+--
+
+ALTER TABLE ONLY public.wiki ALTER COLUMN id SET DEFAULT nextval('public.wiki_id_seq'::regclass);
+
+
+--
+-- Name: guild guild_pk; Type: CONSTRAINT; Schema: public; Owner: wiki
+--
+
+ALTER TABLE ONLY public.guild
+    ADD CONSTRAINT guild_pk PRIMARY KEY (id);
+
+
+--
+-- Name: wiki wiki_pkey; Type: CONSTRAINT; Schema: public; Owner: wiki
+--
+
+ALTER TABLE ONLY public.wiki
+    ADD CONSTRAINT wiki_pkey PRIMARY KEY (url, guild_id);
+
+
+--
+-- Name: wiki wiki_un; Type: CONSTRAINT; Schema: public; Owner: wiki
+--
+
+ALTER TABLE ONLY public.wiki
+    ADD CONSTRAINT wiki_un UNIQUE (abbreviation, guild_id);
+
+
+--
+-- Name: wiki wiki_fk; Type: FK CONSTRAINT; Schema: public; Owner: wiki
+--
+
+ALTER TABLE ONLY public.wiki
+    ADD CONSTRAINT wiki_fk FOREIGN KEY (guild_id) REFERENCES public.guild(id) ON DELETE CASCADE;
+
+
+--
+-- PostgreSQL database dump complete
+--
+
