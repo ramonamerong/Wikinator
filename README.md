@@ -18,45 +18,42 @@
   After starting the bot with node, the database is connected succesfully when the message <code>Database connected</code> is displayed in the console.
 </p>
 
-<h3>Commands</h3>
+<h3>Slash commands</h3>
 <ul>
   <li>
-    <code>-help [Command Name]</code>This command can be used to get a list of all commands or more info about a certain command.
+    <code>/help [command name]</code>This command can be used to get a list of all commands or more info about a certain command.
   </li>
   <li>
-    <code>-add [Wiki Abbreviation] [Wiki url]</code>
-      (This command is limited to the owner and admins of a server) Use this command to add a wiki to this server. The provided wiki abbreviation can be used in conjunction with the '-wiki' command to search that wiki.
-      <br>The wiki url must be of the format 'https://example.com'.
+    <code>/add [wiki abbreviation] [wiki url] [default]</code>
+      (This command is limited to the owner and admins of a server) Use this command to add (or update when using the same abbreviation) a wiki to this server. The provided wiki abbreviation can be used in conjunction with the <code>/wiki</code> command to search that wiki. The wiki url must be of the format `https://example.com`. You can also set the wiki as the default for the server so the abbreviation is not needed when using `/wiki`.
   </li>
   <li>
-    <code>-remove [Wiki abbreviation, name or url]</code>
+    <code>/remove [wiki abbreviation, name or url]</code>
       (This command is limited to the owner and admins of a server) With this command you can remove a wiki from your server. You can do this by providing either the wiki's abbreviation, name or url (in the format 'https://example.com').
   </li>
   <li>
-    <code>-wiki [Wiki Abbreviation - Optional] [Subcommand - Optional] [Search]</code>
+    <code>/wiki page/category/search/all [search] [wiki abbreviation - optional]</code>
         This command can be used to search any registered wiki for info.
-        <br>Use a wiki abbreviation if you want to search for a specific wiki. You can see all wikis with '-list'. The default is the English Wikipedia.
-        <br>Use the 'page' subcommand followed by a search term to search for a page title on the wiki;
-        <br>the 'category' subcommand to get a category page with category members (if you enter 'all' or nothing you will get all categories);
-        <br>or the 'search' subcommand to perform a exact text search on the wiki and get a list of pages.
-        <br>If you omit the subcommand entirely I will first search for a category, then for a page and at last for pages containing your search.
-        <br>Example: '-wiki mc search creeper' - Search a minecraft wiki for all pages containing the word 'creeper'.
+        <br>Use a wiki abbreviation if you want to search for a specific wiki. You can see all wikis with '/list'. The default is the English Wikipedia.
+        <br>Use the <code>page</code> subcommand to search for wiki pages with the searched title;
+        <br>the <code>category</code> subcommand to search for matching categories and pages falling under these categories (if you enter \'all\' you will get all categories);
+        <br>or the <code>search</code> subcommand to search for wiki pages containing your search in their body.
+        <br>If you use the <code>all</code> subcommand page titles, categories and bodies will all be searched.
+        <br>Example: <code>/wiki mc search creeper</code> - Search a minecraft wiki for all pages containing the word 'creeper'.
   </li>
   <li>
-    <code>-list</code>
+    <code>/list</code>
       Use this command to get a list of all available wikis to this server. The wiki's name and abbreviation will both be displayed.
   </li>
   <li>
-    <code>-calc [Arithmetic Sum]</code>
+    <code>/calc [arithmetic sum]</code>
       Use this command to calculate a simple arithmetical sum, only containing addition '+', subtraction '-', multiplication '*', division '/' and power '^' operators. You can also enclose something in brackets '()' to indicate that that should be calculated first.
-    <br>Example: <code>-calc (2+3) * 5</code>
+    <br>Example: <code>/calc (2+3) * 5</code>
   </li>
 </ul>
 
 <h3>Future additions</h3>
 <ul>
-  <li>Replace emoji reactions with buttons.</li>
-  <li>Set a default wiki for a server without the use of a abbrevation.</li>
   <li>Different embed colors for each added wiki.</li>
 </ul>
 
