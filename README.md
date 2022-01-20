@@ -25,11 +25,11 @@
   </li>
   <li>
     <code>/add [wiki abbreviation] [wiki url] [default]</code>
-      (This command is limited to the owner and admins of a server) Use this command to add (or update when using the same abbreviation) a wiki to this server. The provided wiki abbreviation can be used in conjunction with the <code>/wiki</code> command to search that wiki. The wiki url must be of the format `https://example.com`. You can also set the wiki as the default for the server so the abbreviation is not needed when using `/wiki`.
+      (This command is limited to the owner and admins of a server) Use this command to add (or update when using the same abbreviation) a wiki to this server. The provided wiki abbreviation can be used in conjunction with the <code>/wiki</code> command to search that wiki. The wiki url must be of the format <code>https://example.com</code>. You can also set the wiki as the default for the server so the abbreviation is not needed when using `/wiki`.
   </li>
   <li>
     <code>/remove [wiki abbreviation, name or url]</code>
-      (This command is limited to the owner and admins of a server) With this command you can remove a wiki from your server. You can do this by providing either the wiki's abbreviation, name or url (in the format 'https://example.com').
+      (This command is limited to the owner and admins of a server) With this command you can remove a wiki from your server. You can do this by providing either the wiki's abbreviation, name or url (in the format <code>https://example.com</code>).
   </li>
   <li>
     <code>/wiki page/category/search/all [search] [wiki abbreviation - optional]</code>
