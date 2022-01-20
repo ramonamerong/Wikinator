@@ -1,32 +1,4 @@
-//Import modules
-const fs = require('fs');
-
 module.exports = {
-    getJSONFile(path){
-
-        //Only continue if it exist
-        if(!fs.existsSync(path)) return null;
-
-        //Load the json file and return it
-        return JSON.parse(fs.readFileSync(path, 'utf-8'));
-    },
-
-    isInteger(integer){
-        return !Number.isNaN(Number(integer))
-    },
-
-    directMsg(msg, userMember, callbackTextChannel){
-        return userMember.send(msg)
-            .catch(async () => {
-                const m = await callbackTextChannel.send(userMember.toString() + ', ' + msg +
-                    '\nAlso, you should enable messages from server members.').catch(console.error);
-                setTimeout(() => m.delete().catch(() => {
-                    callbackTextChannel.guild.owner.send('I tried to delete a message from the server, but I wasn\'t able to.\nPlease give me this permission.')
-                        .catch(console.error);
-                }), 10000);
-            });
-    },
-
     encDiscordURL(url, encSpace = false){
         url = url
             .replace(/\(/g, '%28')
@@ -34,30 +6,26 @@ module.exports = {
             .replace(/\[/g, '&5B')
             .replace(/\]/g, '%5D')
             .replace(/\*/g, '%2A%0A');
+
         if(encSpace){
             return url.replace(/ /g, '%20')
         } else{
             return url.replace(/ /g, '_')
         }
     },
-
     removeHTML(string){
         return string.replace(/<[^>]*>?/gm, '');
     },
-
     getTitleFromURL(url){
         return url.match(/\[.+\]/).replace(' ', '_')
     },
-
     dd(variable){
         console.debug(variable);
         process.abort()
     },
-
     escRegExp(string) {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     },
-
     shuffleArray(array){
 
         //Loop backwards over all array elements
@@ -70,7 +38,6 @@ module.exports = {
             [array[i], array[j]] = [array[j], array[i]];
         }
     },
-
     separateEndBrackets(string){
         string = string.replace(/(\*|\|\|)/g, '').trim();
         const RE = new RegExp('\\([A-Za-z0-9\\-._| ]+\\)$');
@@ -80,6 +47,20 @@ module.exports = {
     //Copy a reference object
     copy(x) {
         return JSON.parse(JSON.stringify(x))
+    },
+
+    //Take the sum of all of the elements in a array
+    arraySum(array){
+        return array.reduce( (a, b) => a + b, 0)
+    },
+
+    //Transform single array into a unique array with object containing name/value as the same values
+    arrayObjectify(array){
+        return array
+            .filter((x, i, a) => a.indexOf(x) == i)
+            .map(x => {
+                return {name: x, value: x}
+            });
     },
 
     //Return an array of values of a possible object
@@ -93,5 +74,4 @@ module.exports = {
         else
             return data;
     }
-
 };

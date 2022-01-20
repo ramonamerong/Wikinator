@@ -3,7 +3,7 @@ const config = require('../config.json').database;
 
 //Connecting to database
 const {Client, Pool} = require('pg');
-client = new Client(config);
+let client = new Client(config);
 client.connect(err => {
     if(err){
         console.error(err)

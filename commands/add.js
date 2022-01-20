@@ -2,36 +2,60 @@
 const axios = require('axios');
 const url = require('url');
 const db = require('../personal_modules/database.module.js');
+const embed = require('../personal_modules/embed.module.js');
 
 //Import config
-const {prefix} = require('../config.json');
 const wikiConfig = require('../config.json').commands.wiki;
 const helper = require('../personal_modules/helper.module.js');
 
 module.exports = {
-    name: 'add',
-    shortDesc: 'Add a new wiki to this server.',
-    category: 'Wiki - Managing',
-    description: 'Use this command to add a wiki to this server. The provided wiki abbreviation can be used in conjunction with the `'+prefix+'wiki` command to search that wiki.' +
-        'The wiki url must be of the format `https://example.com`.',
-    usage: '[Wiki Abbreviation] [Wiki url]',
-    argsOpt: false,
+
+    //The command for discord
+    data: {
+        type: 'CHAT_INPUT',
+        defaultPermission: true,
+        name: 'add',
+        description: 'Add (or update) a (new) wiki on this server.',
+        options: [
+            {
+                type: 'STRING',
+                name: 'abbreviation',
+                description: 'The abbreviation to safe the wiki under.',
+                required: true,
+            },
+            {
+                type: 'STRING',
+                name: 'url',
+                description: 'The url to the wiki in the format `https://example.com`.',
+                required: true,
+            },
+            {
+                type: 'BOOLEAN',
+                name: 'default',
+                description: 'Set this wiki as the default for this server when using `/wiki` with an abbreviation.',
+                required: true,
+            }
+        ]
+    },
+    
+    //Additional info for permissions and help command
+    category: 'Wiki',
+    longDescription: 'Use this command to add (or update when using the same abbreviation) a wiki to this server. The provided wiki abbreviation can be used in conjunction with the `/wiki` command to search that wiki.' +
+        'The wiki url must be of the format `https://example.com`. You can also set the wiki as the default for the server so the abbreviation is not needed when using `/wiki`.',
+    usage: '[wiki abbreviation] [wiki url] [default]',
     guildOnly: true,
     adminOnly: true,
     dmOnly: false,
-    delGuildMsg: false,
-    async execute(message, args){
 
-        //Check whether a second argument has been given
-        if(args[1] == null)
-            return message.reply('Please provide a valid url in the format `https://example.com`').catch(console.error);
+    //Command code
+    async execute(interaction){
 
         //Try to create an url object out of it
         let wikiURL;
         try{
-            wikiURL = new URL(args[1]);
+            wikiURL = new URL(interaction.options.getString('url'));
         } catch {
-            return message.reply('Please provide a valid url in the format `https://example.com`').catch(console.error);
+            return interaction.reply('Please provide a valid url in the format `https://example.com`').catch(console.error);
         }
 
         //Try to make an api request for the site info.
@@ -65,12 +89,12 @@ module.exports = {
         }
 
         if(apiPath == null)
-            return message.reply('This url doesn\'t correspondent to a valid wiki.').catch(console.error);
+            return interaction.reply({content: 'This url doesn\'t correspondent to a valid wiki.', ephemeral: true}).catch(console.error);
 
         //When the api encountered an error, let the user know
         if(res.data.error){
             console.error(Object.values(response.data.error).join('\n'));
-            return message.reply('The wiki is currently not available.').catch(console.error);
+            return interaction.reply({content: 'The wiki is currently not available.', ephemeral: true}).catch(console.error);
         }
 
         //Assign the site info to a local variable
@@ -137,29 +161,34 @@ module.exports = {
         }
 
 
-
         //Try to create a new entry for the wiki
         let msg;
+        const def = interaction.options.getBoolean('default');
         try{
             //Create an entry for the guild if it doesn't exist yet
             await db.query('insert into guild(id) values($1)' +
                 ' ON conflict (id) do UPDATE set id = $1',
-                [message.guild.id]);
+                [interaction.guild.id]);
 
-            //Add/update the channel
+            //When this wiki should be set as the default, set all other defaults to false
+            if(def){
+                await db.query('update wiki set "default" = $1 where guild_id = $2', [false, interaction.guild.id])
+            }
+
+            //Add/update the wiki
             await db.query(
-                'insert into wiki(guild_id, abbreviation, url, logo, name, api_path) values($1,$2,$3,$4,$5,$6)' +
-                ' on conflict on constraint wiki_un do update set guild_id = $1, abbreviation = $2, url = $3, logo = $4, name = $5, api_path = $6',
-                [message.guild.id, args[0], wikiURL.origin, siteInfo.logo || wikiConfig.logo, siteInfo.sitename, apiPath]
+                'insert into wiki(guild_id, abbreviation, url, logo, name, api_path, "default") values($1,$2,$3,$4,$5,$6,$7)' +
+                ' on conflict on constraint wiki_un do update set guild_id = $1, abbreviation = $2, url = $3, logo = $4, name = $5, api_path = $6, "default" = $7',
+                [interaction.guild.id, interaction.options.getString('abbreviation'), wikiURL.origin, siteInfo.logo || wikiConfig.logo, siteInfo.sitename, apiPath, def]
             );
-            msg = 'The \''+siteInfo.sitename+'\' wiki has been added/updated!' +
-                '\nDo `'+prefix+'list` to see all available wikis.';
+            msg = {content: 'The \''+siteInfo.sitename+'\' wiki has been added/updated!' +
+                '\nDo `/list` to see all available wikis.', ephemeral: true};
         }
         catch(e) {
-            msg = 'Something went wrong.';
+            msg = embed.createErrorEmbed();
             console.error(e)
         }
 
-        message.reply(msg).catch(console.error)
+        interaction.reply(msg).catch(console.error)
     }
 };

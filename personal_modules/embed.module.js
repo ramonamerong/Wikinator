@@ -1,12 +1,13 @@
 //Import modules
 const Discord = require('discord.js');
+const { MessageActionRow, MessageButton, MessageSelectMenu } = require('discord.js');
 const Entities = require('html-entities').AllHtmlEntities;
 const entities = new Entities;
 const helper = require('../personal_modules/helper.module.js');
 
 //Import config
 const commandConfig = require('../config.json').commands;
-const{prefix, username, avatar} = require('../config.json');
+const {username, avatar} = require('../config.json');
 
 module.exports = {
 
@@ -22,25 +23,64 @@ module.exports = {
 
 
     //Function to create a default embed when an error occurs
-    createErrorEmbed(msg){
-        return [{
-            embed: this.createEmbed(
-                '',
-                msg || commandConfig.errorMsg,
-                null,
-                '',
-                0x4287f5
-            )
-        }];
+    createErrorEmbed(msg, menuEmbed = false){
+        if(!menuEmbed)
+            return {
+                embeds: [this.createEmbed(
+                    '',
+                    msg || commandConfig.errorMsg,
+                    null,
+                    '',
+                    0x4287f5
+                )],
+                ephemeral: true
+            };
+        else
+            return [
+                {embed: this.createEmbed(
+                    '',
+                    msg || commandConfig.errorMsg,
+                    null,
+                    '',
+                    0x4287f5
+                )},
+            ];
     },
 
+    //Function to create (emoji) buttons for an embed
+    //Labels/types can either be a single 1D row or multiple 2D rows, but must have the same shape and not more than 5 columns
+    //Output is always 2D
+    createButtons(labels, styles){
+
+        //Convert 1D to 2D
+        if(!Array.isArray(labels[0])){
+            labels = [labels]; styles = [styles];
+        }
+
+        //Convert every row to a message action row
+        buttons = []
+        for(let row = 0; row < labels.length; row++){
+            let msgActRow = new MessageActionRow();
+
+            //Add a button for every column in that row
+            for(let col = 0; col < labels[row].length; col++){
+                msgActRow = msgActRow.addComponents(new MessageButton()
+                    .setCustomId(labels[row][col])
+                    .setEmoji(labels[row][col])
+                    .setStyle(styles[row][col])
+                );
+            }
+            buttons.push(msgActRow)
+        }
+
+        return buttons
+    },
 
     //Function that returns embeds in an array.
     //When specifying a field name, either a field value or list items must also be specified.
     //When list items are specified, new embeds are created for every 10 items or 1023 characters.
     //(Subsets of) list items are then converted to strings and placed in the field values of those arrays.
     //By default, the original list items are also saved into the listItems property of an embed object.
-
     createListEmbed(embedConfig, title, description, url, thumbnail, fieldName = null, fieldValue = null, listItems = null, keepListItems = true){
 
         //Setting up embeds array
@@ -187,236 +227,288 @@ module.exports = {
         return embeds;
     },
 
+    //Function to add the listItemFunction and it's args to every list item
+    addListItemFunctions(listItems, listItemFunctions){
+        return listItems.map(listItem => {
 
-    //Function to send embed(s) to the user, with a navigation menu for multiple embeds and the option to specify an action for list items of a field if any.
-    //This navigation menu consists of emojis the user can react to to go to the next or previous embed or perform a certain action on a list item.
+            //Get the the function from the listItemFunction array, by matching the included regular expression against the list item title.
+            let listItemFunction = listItemFunctions.find(
+                listItemFunction => {
+                    let functionRegExp = new RegExp(listItemFunction[1]);
+                    return listItem.title.match(functionRegExp);
+                });
+
+                //Only proceed to add a function, when there is a match.
+            if(listItemFunction[0] != null) {  
+                listItem['function'] = listItemFunction[0]
+                listItem['args'] = listItemFunction[2];
+            }
+
+            return listItem
+        })
+    },
+
+    //Class to send embed(s) to the user, with a navigation menu for multiple embeds and the option to specify an action for list items of a field if any.
+    //This navigation menu consists of emoji buttons the user can react to to go to the next or previous embed or perform a certain action on a list item.
     //For the list items to be responsive, function(s) must be defined in the 'listItemFunctions' parameter in the following way: [[function, RegExp],[function, RegExp], etc.].
     //The first function whose regular expression matches the activated list item's title will take that title (or url if available and if useURL is 'true') as an argument.
     //In case the function generates an embed, that embed is loaded.
-    //A function can only be performed if the embed object contains the list items in their listItem property.
+    //A function can only be performed if the embed object contains the list items in their listItems property.
+    MenuEmbed: class {
 
-    async sendEmbed(embedConfig, message, embeds, listItemFunctions = null, files = null) {
+        //Declare properties
+        embedConfig;
+        interaction;
+        embeds;
+        files;
 
-        try{
+        pagesLen;
+        pageIndexes;
+        listItemIndexes;
+        collector;
+        module;
+        numButtons;
 
-            //Initiate page number, lock, sub pages and last page numbers variables, save the command message for later use and import embed config
-            let pageNum = 0;
-            let lock = false;
-            let subPages = [];
-            let lastPagesNum = [];
-            const commandMsg = message;
+        constructor(embedConfig, interaction, embeds, files = null){
+            this.embedConfig = embedConfig;
+            this.interaction = interaction;
+            this.embeds = embeds;
+            this.files = files;
 
-            //Setup array of emojis buttons to react to
-            const emojis = [
-                ['backward', '⬅️'],
-                ['forward', '➡️'],
-                ['1', '1⃣'],
-                ['2', '2⃣'],
-                ['3', '3⃣'],
-                ['4', '4⃣'],
-                ['5', '5⃣'],
-                ['6', '6⃣'],
-                ['7', '7⃣'],
-                ['8', '8⃣'],
-                ['9', '9⃣'],
-                ['10', '🔟'],
-                ['delete', '❌'],
-            ];
+            this.pagesLen = [embeds.length]
+            this.pageIndexes = [0]
+            this.listItemIndexes = []
 
-            //Function to retrieve list embed from list object and adding last info.
-            const getEmbed = function(pageNum) {
-                return embeds[pageNum].embed
-                    .setTimestamp(Date.now())
-                    .setFooter('Page ' + (pageNum + 1) + " of " + embeds.length);
-            };
+            this.module = require('../personal_modules/embed.module.js');
 
-            //Function to filter reactions. The user can't be a bot and must be the same who sent the origin command.
-            //The reaction must also be included in the emoji array and the reaction lock should be lifted.
-            function filter(reaction, user) {
-                return !user.bot && user.id === commandMsg.author.id
-                    && emojis.find(emoji => emoji[1] === reaction.emoji.name) != null
-                    && !lock;
-            }
+            this.numButtons = ['1⃣','2⃣','3⃣','4⃣','5⃣','6⃣','7⃣','8⃣','9⃣','🔟'];
 
-            //Function to react to own message to add navigation buttons
-            async function addEmojis(message, pageNum) {
+        }
 
-                //When no listItemFunctions are specified or when there are no list items in the list item property,
-                //then the maxNumber of number emojis (1-10) is set to 0.
-                //Otherwise a number emoji is displayed for every list item
-                let maxNumber;
-                if(listItemFunctions === null || embeds[pageNum].listItems === undefined || embeds[pageNum].listItems === null){
-                    maxNumber = 0;
-                } else{
-                    maxNumber = Object.keys(embeds[pageNum].listItems).length
+        //Method to send the first embed with buttons and setup the collector
+        async start(){
+
+            try{
+
+                //Send first message
+                try{
+                    await this.interaction.reply({embeds: [this.getEmbed().embed], components: this.getMenu()});
+                } catch(error){
+                    await this.interaction.editReply({embeds: [this.getEmbed().embed], components: this.getMenu()});
+                }
+                let sentMsg = await this.interaction.fetchReply()
+
+                //Function to filter reactions. The user can't be a bot and must be the same who sent the origin command,
+                //the interaction must either be a button or select menu
+                let filter = async (menuInteraction) => {
+                    await menuInteraction.deferUpdate();
+                    return !menuInteraction.user.bot && menuInteraction.user.id === this.interaction.user.id
+                        && (menuInteraction.isButton() || menuInteraction.isSelectMenu())
                 }
 
-                //Check for every emoji if it should be added
-                for(let i = 0; i < emojis.length; i++){
-
-                    //Skip any emoji that is already present
-                    if(message.reactions.cache.some(r => r.emoji.name === emojis[i][1])){
-                        continue;
+                //Make Reaction Collector to collect reactions for send list embed
+                this.collector = sentMsg.createMessageComponentCollector({filter, time: this.embedConfig.expireTime});
+                
+                //Event to fire when reaction is measured
+                this.collector.on('collect', async menuInteraction => {
+                    if(menuInteraction.isButton()){
+                        switch(menuInteraction.customId){
+                            //Load previous embed
+                            case "⬅️":
+                                this.prev();
+                                break;
+                            //Load next embed
+                            case "➡️":
+                                this.next();
+                                break;
+                            //Return before opening list item
+                            case "⬆️":
+                                this.return();
+                                break;
+                            //Delete embed message
+                            case "✖":
+                                this.close();
+                                return
+                                break;
+                            //Open embed(s) of list item
+                            default:
+                                await this.openListItem(menuInteraction.customId);
+                                break;
+                        }
+                    //Go to a specific embed page
+                    } else if (menuInteraction.isSelectMenu()){
+                        this.pageIndexes[this.pageIndexes.length-1] = Number(menuInteraction.values[0])
                     }
 
-                    //If the number of embeds is bigger than one, echo left and right arrows
+                    //Update embed message with the correct embed and buttons
+                    await menuInteraction.editReply({embeds: [this.getEmbed().embed], components: this.getMenu()});
+                })
+
+                //Event to fire when the collector ends.
+                this.collector.on('end', async () => {
                     try{
-                        if (embeds.length > 1 && emojis[i][1] === '⬅️') {
-                            await message.react('⬅️');
-                        }
-                        if (embeds.length > 1 && emojis[i][1] === '➡️') {
-                            await message.react('➡️');
-                        }
+                        return await this.interaction.editReply({embeds: [this.getEmbed().embed.setFooter({text: this.embedConfig.expireMsg})], components: []});
+                    } catch(e){}
+                });
 
-                        //Display as much navigation emojis as there are list items on the current displayed embed
-                        if (emojis[i][0] <= maxNumber) {
-                            await message.react(emojis[i][1]);
-                        }
+            } catch(e){
+                console.error(e);
+                return this.module.createErrorEmbed();
+            }
 
-                        //Echo the delete emojis as last
-                        if (emojis[i][1] === '❌') {
-                            await message.react('❌');
-                        }
-                    } catch {
-                        return;
-                    }
+        }
+
+        //Method to retrieve embed recursively among list items and adding last info.
+        getEmbed(embeds = this.embeds, pageLevel = 0, listItemLevel = 0, footer = ''){
+
+            //Get current embed and footer
+            let currentPageIndex = this.pageIndexes[pageLevel];
+            let currentListItemKey = String(this.listItemIndexes[listItemLevel] + 1);
+            let currentEmbed = embeds[currentPageIndex];
+            footer += 'Page ' + (this.pageIndexes[pageLevel] + 1) + "/" + this.pagesLen[pageLevel];
+
+            //Base case: When no listItemIndex is present at the current level, the current embed should be returned
+            if(listItemLevel == this.listItemIndexes.length){
+                currentEmbed.embed = currentEmbed.embed
+                    .setTimestamp(Date.now())
+                    .setFooter({text: footer});
+                if(this.files != null)
+                    currentEmbed.embed = currentEmbed.embed.attachFiles(this.files)
+
+                return currentEmbed
+            }
+            else //Otherwise, keep searching
+                return this.getEmbed(currentEmbed.listItems[currentListItemKey].subEmbeds, ++pageLevel, ++listItemLevel, footer + '\n')
+        }
+
+
+        //Method to retrieve a menu based on the current embeds
+        getMenu(){
+
+            const currentPageIndex = this.pageIndexes[this.pageIndexes.length-1];
+            const currentNumPages = this.pagesLen[this.pagesLen.length-1];
+
+            //Add navigation button for previous, next, return from list item and close
+            const buttonRows = [[]];
+            const buttonRowStyles = [[]];
+            buttonRows[0].push("✖"); buttonRowStyles[0].push('DANGER');
+            if(this.pageIndexes.length > 1){ buttonRows[0].push('⬆️'); buttonRowStyles[0].push('SECONDARY');}
+            if(currentPageIndex > 0){ buttonRows[0].push('⬅️'); buttonRowStyles[0].push('SECONDARY');}
+            if(currentPageIndex < currentNumPages - 1){ buttonRows[0].push('➡️'); buttonRowStyles[0].push('SECONDARY');}
+
+            //Add buttons for the number of list items in rows of max 5 items if there are functions and/or the list items have subembeds
+            let currentListItems = this.getEmbed().listItems;
+            if(currentListItems != null && (Object.values(currentListItems).every(li => li.function != null || li.subEmbeds != null))){
+                currentListItems = Object.values(currentListItems);
+                if(currentListItems.length <= 5){
+                    buttonRows.push(this.numButtons.slice(0, currentListItems.length));
+                    buttonRowStyles.push(new Array(currentListItems.length).fill('PRIMARY'));
+                }
+                else {
+                    buttonRows.push(this.numButtons.slice(0, 5));
+                    buttonRowStyles.push(new Array(5).fill('PRIMARY'));
+
+                    buttonRows.push(this.numButtons.slice(5, currentListItems.length));
+                    buttonRowStyles.push(new Array(currentListItems.length).fill('PRIMARY'));  
                 }
             }
 
-            //Sending first embed and reacting to own message
-            if(files != null){
-                message = await message.channel.send(getEmbed(pageNum).attachFiles(files));
-            } else {
-                message = await message.channel.send(getEmbed(pageNum));
-            }
+            let menu = this.module.createButtons(buttonRows, buttonRowStyles);
 
-            addEmojis(message, pageNum);
+            //Create select menu for multiple pages
+            if(currentNumPages > 1){
 
-            //Make Reaction Collector to collect reactions for send list embed
-            const reactionCollector = message.createReactionCollector(filter,
-                {time: embedConfig.expireTime}
-            );
+                //When the number of options are <=25 create an option for every page
+                let options;
+                if(currentNumPages <= 25){
+                    options = Array(currentNumPages).fill('').map( (_, i) => {
+                        return {label:'Page ' + (i+1), value: String(i)};
+                    })
+                //If this >25, create 25 page options at even intervals
+                } else {
+                    options = [];
+                    const interval = Math.floor(currentNumPages / 25);
+                    const remainder = currentNumPages % 25;
+                    for(let i=0; i < currentNumPages; i += interval){
 
-            //Event to fire when reaction is measured
-            let delMessage = false;
-            reactionCollector.on('collect', async collected => {
-
-                //Enable the lock to prevent any other message
-                lock = true;
-
-                //If the reaction is the 'delete' emoji, delete the message and and the reaction collector
-                if (collected.emoji.name === '❌') {
-                    delMessage = true;
-                    reactionCollector.stop();
-                }
-
-                //If the reaction is the 'arrow right' emoji, load the next embed
-                else if (collected.emoji.name === '➡️' && (pageNum + 1 < embeds.length)) {
-                    await message.edit({embed: getEmbed(++pageNum)});
-                }
-
-                //If the reaction is the 'arrow left' emoji, load the previous page
-                //and remove any subpages/embeds when not on this embed anymore
-                else if (collected.emoji.name === '⬅️' && pageNum > 0) {
-
-                    if(subPages.length && pageNum <= (embeds.length - subPages[0])){
-                        let subPagesDel = subPages.shift();
-                        for(let i = 0; i < subPagesDel; i++){
-                            embeds.pop();
-                        }
-
-                        pageNum = lastPagesNum.shift();
-                        await message.edit({embed: getEmbed(pageNum)});
-                    } else {
-                        await message.edit({embed: getEmbed(--pageNum)});
+                        //Spread out the remainder evenly over all intervals
+                        if(remainder != 0 && i % Math.round((currentNumPages / (remainder+1))) == 0) 
+                            i++;
+                        options.push({label:'Page ' + (i+1), value: String(i)});
                     }
                 }
 
-                //If the reaction is a number emoji AND listItemFunction(s) are defined
-                //AND there are list items available for the current embed in the property,
-                //get the list item associated with the (number) emoji and perform the function on it..
-                else if (listItemFunctions !== null && embeds[pageNum].listItems != null) {
+                let selectMenu = new MessageActionRow().addComponents(new MessageSelectMenu()
+                    .setCustomId('select')
+                    .setPlaceholder('Select a page')
+                    .addOptions(options)
+                );
+                menu.push(selectMenu);
+            }
+
+            return menu;
+        }
+        
+        //Method for button interactions
+        prev(){
+            if(this.pageIndexes[this.pageIndexes.length-1] > 0)
+                this.pageIndexes[this.pageIndexes.length-1] -= 1;
+        }
+
+        next(){
+            if(this.pageIndexes[this.pageIndexes.length-1] < this.pagesLen[this.pagesLen.length-1] - 1)
+                this.pageIndexes[this.pageIndexes.length-1] += 1;
+        }
+
+        return(){
+            if(this.pageIndexes.length > 1){
+                this.pageIndexes.pop()
+                this.pagesLen.pop()
+                this.listItemIndexes.pop()
+            }
+        }
+
+        close(){
+            this.interaction.deleteReply();
+        }
+
+        async openListItem(numButton){
+            
+            try {
+
+                //If there are list items available for the current embed in the property,
+                //get the list item associated with the (number) emoji
+                let currentListItems = this.getEmbed().listItems;
+                if(currentListItems != null) {
+                    currentListItems = Object.values(currentListItems)
 
                     //Get the list item from the embed object based on the number emoji.
-                    let listItems = await embeds[pageNum].listItems;
-                    let listItem = await listItems[
-                        Object.keys(listItems).find(key => {
-                            return emojis.find(emoji => emoji[0] === key)[1] === collected.emoji.name;
-                        })];
+                    const listItemIndex = this.numButtons.findIndex(nm => nm == numButton);
+                    const listItem = currentListItems[listItemIndex];
 
-                    //If none is returned end the listener function.
+                    //If none is returned stop
                     if(listItem == null) return;
 
-                    //When an embed was previously generated based on the list item title/url, get that embed from the subEmbed property.
-                    //Otherwise, retrieve the function.
-                    let newEmbeds;
-                    if(listItem.subEmbed != null){
-                        newEmbeds = listItem.subEmbed;
-                    } else{
-
-                        //Get the the function from the listItemFunction array, by matching the included regular expression against the list item title.
-                        let listItemFunction = listItemFunctions.find(
-                            listItemFunction => {
-                                let functionRegExp = new RegExp(listItemFunction[1]);
-                                return listItem.title.match(functionRegExp);
-                            });
-
-                        //Only proceed to perform a function, when there is a match.
-                        if(listItemFunction[0] != null) {
-
-                            //Then, perform the function by inserting the list item title (or url when 'useURL' is set to true) into that function,
-                            newEmbeds = await listItemFunction[0](
-                                message,
-                                (listItem.url && listItem.useURL)? listItem.url : listItem.title,
-                                commandMsg,
-                                listItemFunction[2]
-                            );
-                        }
-
+                    //When this list item has no subembeds and there is a listItemFunction, retrieve the function to retrieve the subembeds
+                    //And assign it to the listItem
+                    if(listItem.subEmbeds == null && listItem.function != null){
+                        let subEmbeds = await listItem.function(
+                            (listItem.url && listItem.useURL)? listItem.url : listItem.title,
+                            {...listItem.args}
+                        );
+                        this.getEmbed().listItems[String(listItemIndex+1)].subEmbeds = subEmbeds;                 
                     }
 
-                    //Only if embeds have been/were previously generated by the function , it should be added to the local embed array
-                    //And cached in the matching list item.
-                    if(newEmbeds != null){
-
-                        //Add them to the corresponding list item for caching and to local embed array.
-                        subPages.unshift(newEmbeds.length);
-                        listItem.subEmbed = newEmbeds;
-                        embeds = embeds.concat(newEmbeds);
-
-                        //Save the last page number the user was on
-                        lastPagesNum.unshift(pageNum);
-
-                        //Then load the first one of the new embeds.
-                        pageNum = embeds.length - subPages[0];
-                        await message.edit({embed: getEmbed(pageNum)});
-
+                    //When the list item now has subembeds, either because they were already present, or generated by a function, add indexes
+                    if(listItem.subEmbeds != null){
+                        this.pageIndexes.push(0);
+                        this.pagesLen.push(listItem.subEmbeds.length);
+                        this.listItemIndexes.push(listItemIndex);
                     }
-                }
-
-                //Lift the lock
-                lock = false;
-
-                //Clear reactions and add new ones
-                await addEmojis(message, pageNum);
-            });
-
-            //Event to fire when the collector ends.
-            reactionCollector.on('end', async collected => {
-                try{
-                    if(delMessage === true){
-                        return await message.delete();
-                    } else {
-                        return await message.edit(getEmbed(pageNum).setFooter(embedConfig.expireMsg));
-                    }
-                } catch{}
-            });
-
-            return message;
-        }
-        catch(error){
-            console.error(error);
-            return this.createErrorEmbed();
+                } 
+            } catch(e){
+                throw e
+            }
         }
     }
 };

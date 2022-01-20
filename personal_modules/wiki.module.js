@@ -11,16 +11,52 @@ const {prefix} = require('../config.json');
 module.exports = {
     name: 'wiki',
 
-    //Function to execute the wiki command from within a list embed
-    async subExecute(message, title, commandMsg){
-        let splitTitle = helper.separateEndBrackets(title);
-        commandMsg.content = '-wiki ' + (splitTitle[1].includes('Wiki - Category')? 'category ' : '') + splitTitle[0];
-        message.client.emit('message', commandMsg)
+    //Function to get a list of page titles and urls in a format acceptable by the createListEmbed function
+    async getTitles(search, wikiInfo) {
+
+        try{
+
+            //Return a list of possible titles and urls
+            let response = await axios.get(wikiInfo.url + wikiInfo.api_path, {
+                params: {
+                    action: 'opensearch',
+                    format: 'json',
+                    formatversion: '2',
+                    search: search,
+                    limit: wikiConfig.embed.maxResults,
+                    namespace: wikiConfig.titleSearchNamespaces,
+                    redirects: wikiConfig.titleRedirects,
+                    suggest: true,
+                    profile: wikiConfig.titleSearchProfile
+                }
+            });
+
+            if(response.data.error){
+                throw Error(Object.values(response.data.error).join('\n'));
+            }
+
+            let titles = [];
+            if(response.data[1].length){
+                for(let i = 0; i < response.data[1].length; i ++){
+                    titles.push({
+                        title: response.data[1][i],
+                        url: (response.data[3] && response.data[3].length)? response.data[3][i] : wikiInfo.url + wikiConfig.pagePath + response.data[1][i]
+                    })
+                }
+            } else{
+                titles = null;
+            }
+
+            return titles;
+
+        } catch(error){
+            throw error
+        }
     },
 
     //Function to retrieve page information from the wiki and insert it into embed(s) which are returned.
-    async getPageEmbed(message, title, commandMsg, wikiInfo) {
-        
+    async getPageEmbed(title, wikiInfo) {
+            
         //Import embed module
         const embed = require('../personal_modules/embed.module.js');
 
@@ -46,7 +82,6 @@ module.exports = {
             
             //Retrieve the page
             const page = helper.getValues(response.data.query.pages, false)[0];
-
             
             //If the page is missing or invalid, return a default embed message
             if (page.missing === true || page.missing === '') {
@@ -163,8 +198,110 @@ module.exports = {
         }
     },
 
+    //Function to search for pages by title search and get a list of embeds compatible with the MenuEmbed class of the embed module
+    async getPageListEmbed(search, wikiInfo){
+        let returnObject = {}
 
-    async getCategoryEmbed(message, title, commandMsg, wikiInfo) {
+        //Retrieve modules
+        const embed = require('../personal_modules/embed.module.js');
+        const wiki = require('../personal_modules/wiki.module.js');
+
+        try{
+            //Retrieve title suggestions
+            let titles = await wiki.getTitles(search, wikiInfo);
+
+            //If there are no results available save a default message into the array
+            if (titles == null) {
+                returnObject['embeds'] = [{embed: embed.createEmbed(
+                    'Wiki page: ' + search,
+                    'That page doesn\'t exist yet, do you wish to [create it](' + helper.encDiscordURL(wikiInfo.url + wikiConfig.pagePath + search + '?action=edit') + ')?',
+                        helper.encDiscordURL(wikiInfo.url + wikiConfig.pagePath + search),
+                        wikiInfo.logo,
+                        wikiConfig.embed.color),
+                }];
+                returnObject['numResults'] = 0;
+            }
+
+            //If there is only one result create only the embed(s) for that page
+            else if(titles.length === 1){
+                returnObject['embeds'] = await wiki.getPageEmbed(titles[0].title, wikiInfo);
+                returnObject['numResults'] = 1;
+            }
+
+            //Otherwise create embed(s) which display all search results
+            else{
+
+                //Add the appropiate listItemFunction and args to every list item/title
+                titles = embed.addListItemFunctions(titles, [[wiki.getCategoryEmbed, /^Category:/i, wikiInfo], [wiki.getPageEmbed, /.+/, wikiInfo]]);
+
+                returnObject['numResults'] = titles.length;
+                returnObject['embeds'] = embed.createListEmbed(
+                    wikiConfig.embed,
+                    'Returned pages for: ' + search,
+                    'The following pages match your search results. Press one of the emoji buttons (1⃣-🔟) to load more info of that page.',
+                    helper.encDiscordURL(wikiInfo.url + wikiConfig.searchPath + search + '&title=Special%3ASearch&go=Go'),
+                    wikiInfo.logo,
+                    'Results',
+                    null,
+                    titles);
+            }
+        } catch(error){
+            returnObject['embeds'] = embed.createErrorEmbed(null, true);
+            returnObject['numResults'] = 0;
+            console.error(error);
+        }
+
+        return returnObject;
+    },
+
+
+
+     //Function to get a list of category titles and urls in a format acceptable by the createListEmbed function
+    async getCategories(search, wikiInfo) {
+
+        try{
+            
+            //Return a list of possible titles and urls
+            let response = await axios.get(wikiInfo.url + wikiInfo.api_path, {
+                params: {
+                    action: 'query',
+                    list: 'allcategories',
+                    acprefix: search,
+                    aclimit: wikiConfig.embed.maxResults,
+                    format: 'json',
+                    formatversion: '2',
+                }
+            });
+
+            if(response.data.error){
+                throw Error(Object.values(response.data.error).join('\n'));
+            }
+
+            //Convert the different category formats to the same format
+            response.data.query.allcategories = helper.getValues(response.data.query.allcategories);
+
+            let categories = [];
+            if(response.data.query.allcategories.length){
+
+                for(let i = 0; i < response.data.query.allcategories.length; i++){
+                    categories.push({
+                        title: 'Category:' + response.data.query.allcategories[i],
+                        url: helper.encDiscordURL(wikiInfo.url + wikiConfig.pagePath + 'Category:' + response.data.query.allcategories[i])
+                    })
+                }
+            } else{
+                categories = null;
+            }
+
+            return categories;
+
+        } catch(error){
+            throw error
+        }
+    },
+
+    //Function to get embeds for the categories based on the search result
+    async getCategoryEmbed(title, wikiInfo) {
 
         //Remove favorite markup
         if(title.includes('(Wiki -')){
@@ -233,12 +370,11 @@ module.exports = {
                 }];
             }
 
-
             //Create a category page embed when it's not already created
-            const wikiModule = require('../personal_modules/wiki.module.js');
+            const wiki = require('../personal_modules/wiki.module.js');
             
             if(!categoryPageEmbed){
-                categoryPageEmbed = await wikiModule.getPageEmbed(message,categoryPage.title, null, wikiInfo)
+                categoryPageEmbed = await wiki.getPageEmbed(categoryPage.title, wikiInfo)
             }
 
             //Set the description for the category page embed
@@ -259,6 +395,9 @@ module.exports = {
                         url: helper.encDiscordURL(wikiInfo.url + wikiConfig.pagePath + categoryMembers[i].title)
                     })
                 }
+
+                //Add the appropiate listItemFunction and args to every list item/categoryMember
+                categoryMemberList = embed.addListItemFunctions(categoryMemberList, [[wiki.getCategoryEmbed, /^Category:/i, wikiInfo], [wiki.getPageEmbed, /.+/, wikiInfo]]);
 
                 //Then create the embed with that list
                 categoryMembersEmbed = embed.createListEmbed(
@@ -282,15 +421,85 @@ module.exports = {
         }
     },
 
+    //Function to search for categories and get a list of embeds compatible with the MenuEmbed class of the embed module
+    async getCategoryListEmbed(search, wikiInfo, enableAll = true){
+        let returnObject = {}
 
-    //Function to retrieve search matched information from the wiki and insert it into embed(s) which are returned.
-    async getSearchEmbed(message, search, commandMsg, wikiInfo) {
-
-        //Import embed module
+        //Retrieve modules
         const embed = require('../personal_modules/embed.module.js');
+        const wiki = require('../personal_modules/wiki.module.js');
 
         try{
 
+            //Initiate embed title and description for when there is more than one returned category.
+            let embedTitle;
+            let embedDescription;
+
+            //If 'all' is the search but not the subcommand make the search variable een empty string.
+            //Also change title and description for multiple category results accordingly.
+            if(enableAll && search === 'all'){
+                search = '';
+                embedTitle = 'All categories';
+                embedDescription = '';
+            } else{
+                embedTitle = 'Returned categories for: ' + search;
+                embedDescription = 'The following categories match your search results.';
+            }
+
+            //Retrieve category suggestions
+            let categories = await wiki.getCategories(search, wikiInfo);
+
+            //If there are no results available save a default message into the array
+            if (categories == null) {
+                returnObject['embeds'] = [{embed: embed.createEmbed(
+                        'Category: ' + search,
+                        'That category doesn\'t exist yet, do you wish to [create it](' + helper.encDiscordURL(wikiInfo.url + wikiConfig.pagePath + 'Category:' + search + '?action=edit') + ')?',
+                        helper.encDiscordURL(wikiInfo.url + wikiConfig.pagePath + 'Category:' + search),
+                        wikiInfo.logo,
+                        wikiConfig.embed.color),
+                }];
+                returnObject['numResults'] = 0;
+            } 
+
+            //If there is only one category create only the embed(s) for that category
+            else if(categories.length === 1){
+                returnObject['embeds'] = await wiki.getCategoryEmbed(categories[0].title, wikiInfo)
+                returnObject['numResults'] = 1;
+            }
+
+            //Otherwise create embed(s) which display all category results
+            else{
+
+                //But first, add the appropiate listItemFunction and args to every list item/category
+                categories = embed.addListItemFunctions(categories, [[wiki.getCategoryEmbed, /.+/, wikiInfo]]);
+
+                returnObject['numResults'] = categories.length;
+                returnObject['embeds'] = embed.createListEmbed(
+                    wikiConfig.embed,
+                    embedTitle,
+                    embedDescription + 'Press one of the emoji buttons (1⃣-🔟) to load the pages belonging to that category.',
+                    helper.encDiscordURL(wikiInfo.url + wikiConfig.searchPath + 'Category:' + search + '&title=Special%3ASearch&go=Go'),
+                    wikiInfo.logo,
+                    'Results',
+                    null,
+                    categories);
+            }
+
+        } catch(error){
+            returnObject['embeds'] = embed.createErrorEmbed(null, true);
+            returnObject['numResults'] = 0;
+            console.error(error);
+        }
+
+        return returnObject;
+    },
+
+
+
+    //Function to retrieve search matched information from the wiki 
+    async getSearches(search, wikiInfo){
+
+        try{
             //Check if there are any results of the page and return title and url info if applicable
             let response = await axios.get(wikiInfo.url + wikiInfo.api_path, {
                 params: {
@@ -305,22 +514,34 @@ module.exports = {
             });
 
             if(response.data.error){
-                let msg;
                 if(response.data.error.code === 'srsearch-text-disabled')
-                    msg = 'The text search functionality is disabled for this wiki.';
-                else console.error(Object.values(response.data.error).join('\n'));
-
-                return embed.createErrorEmbed(msg);
+                    throw Error('The text search functionality is disabled for this wiki.');
+                else throw Error(Object.values(response.data.error).join('\n'));
             }
 
             const searchResults = response.data.query.search;
+
+            return searchResults;
+        } catch(error){
+            throw error;
+        }
+    },
+
+    //Function to insert information from the search results into embed(s) which are returned.
+    async getSearchEmbed(search, wikiInfo, searchResults) {
+
+        //Import embed module
+        const embed = require('../personal_modules/embed.module.js');
+        const wiki = require('../personal_modules/wiki.module.js');
+
+        try{
 
             //If the search has no results, return a default message embed
             if(!searchResults.length){
                 return [{embed: embed.createEmbed(
                         'Search results for: ' + search,
                         'Your search didn\'t return any results. Try again.',
-                        helper.encDiscordURL(wikiInfo.url + wikiConfig.searchPath + search + '&title=Special%3ASearch&go=Go'),
+                        helper.encDiscordURL(wikiInfo.url + '/wiki/Special:Search?query=' + search + '&scope=internal&navigationSearch=true'),
                         wikiInfo.logo,
                         wikiConfig.embed.color)
                 }];
@@ -336,12 +557,15 @@ module.exports = {
                 })
             }
 
+            //Add the appropiate listItemFunction and args to every list item/categoryMember
+            listItems = embed.addListItemFunctions(listItems, [[wiki.getCategoryEmbed, /^Category:/i, wikiInfo], [wiki.getPageEmbed, /.+/, wikiInfo]]);
+
             //Setting up embed(s) and returning it.
             return embed.createListEmbed(
                 wikiConfig.embed,
                 "Search results for: " + search,
                 "The following results matched your search. Press one of the emojis (1⃣-🔟) to load the page containing your search.",
-                helper.encDiscordURL(wikiInfo.url + wikiConfig.searchPath + search + '&title=Special%3ASearch&go=Go'),
+                helper.encDiscordURL(wikiInfo.url + '/wiki/Special:Search?query=' + search + '&scope=internal&navigationSearch=true'),
                 wikiInfo.logo,
                 'Results',
                 null,
@@ -355,103 +579,46 @@ module.exports = {
         }
     },
 
+    //Function to search for pages by body search and get a list of embeds compatible with the MenuEmbed class of the embed module
+    async getSearchListEmbed(search, wikiInfo){
+        let returnObject = {}
 
-    //Function to get a list of page titles and urls in a format acceptable by the createListEmbed function
-    async getTitles(title, wikiInfo) {
-
-        //Import embed module
+        //Retrieve modules
         const embed = require('../personal_modules/embed.module.js');
+        const wiki = require('../personal_modules/wiki.module.js');
 
         try{
 
-            //Return a list of possible titles and urls
-            let response = await axios.get(wikiInfo.url + wikiInfo.api_path, {
-                params: {
-                    action: 'opensearch',
-                    format: 'json',
-                    formatversion: '2',
-                    search: title,
-                    limit: wikiConfig.embed.maxResults,
-                    namespace: wikiConfig.titleSearchNamespaces,
-                    redirects: wikiConfig.titleRedirects,
-                    suggest: true,
-                    profile: wikiConfig.titleSearchProfile
-                }
-            });
+            //Retrieve search results
+            searchResults = await wiki.getSearches(search, wikiInfo);
 
-            if(response.data.error){
-                console.error(Object.values(response.data.error).join('\n'));
-                return embed.createErrorEmbed();
+            //If there are no results available save a default message into the array
+            if (searchResults.length == 0) {
+                returnObject['embeds'] = [{embed: embed.createEmbed(
+                    "Search results for: " + search,
+                    'No results found',
+                    helper.encDiscordURL(wikiInfo.url + '/wiki/Special:Search?query=' + search + '&scope=internal&navigationSearch=true'),
+                    wikiInfo.logo,
+                    wikiConfig.embed.color),
+                }];
+                returnObject['numResults'] = 0;
             }
 
-            let titles = [];
-            if(response.data[1].length){
-                for(let i = 0; i < response.data[1].length; i ++){
-                    titles.push({
-                        title: response.data[1][i],
-                        url: (response.data[3] && response.data[3].length)? response.data[3][i] : wikiInfo.url + wikiConfig.pagePath + response.data[1][i]
-                    })
-                }
-            } else{
-                titles = null;
-            }
-
-            return titles;
-
+            returnObject['numResults'] = searchResults.length;
+            returnObject['embeds'] = await wiki.getSearchEmbed(search, wikiInfo, searchResults);
         } catch(error){
-            console.error(error);
-            return embed.createErrorEmbed();
-        }
-    },
 
-
-    //Function to get a list of category titles and urls in a format acceptable by the createListEmbed function
-    async getCategories(search, wikiInfo) {
-
-        //Import embed module
-        const embed = require('../personal_modules/embed.module.js');
-
-        try{
-            
-            //Return a list of possible titles and urls
-            let response = await axios.get(wikiInfo.url + wikiInfo.api_path, {
-                params: {
-                    action: 'query',
-                    list: 'allcategories',
-                    acprefix: search,
-                    aclimit: wikiConfig.embed.maxResults,
-                    format: 'json',
-                    formatversion: '2',
-                }
-            });
-
-            if(response.data.error){
-                console.error(Object.values(response.data.error).join('\n'));
-                return embed.createErrorEmbed();
-            }
-
-            //Convert the different category formats to the same format
-            response.data.query.allcategories = helper.getValues(response.data.query.allcategories);
-
-
-            let categories = [];
-            if(response.data.query.allcategories.length){
-
-                for(let i = 0; i < response.data.query.allcategories.length; i++){
-                    categories.push({
-                        title: 'Category:' + response.data.query.allcategories[i],
-                        url: helper.encDiscordURL(wikiInfo.url + wikiConfig.pagePath + 'Category:' + response.data.query.allcategories[i])
-                    })
-                }
+            //If the error was due to it being disabled on the wiki, don't print the error but report it back to the user
+            if(error.toString().includes('The text search functionality is disabled for this wiki.')){
+                returnObject['embeds'] = embed.createErrorEmbed('The text search functionality is disabled for this wiki.', true);
             } else{
-                categories = null;
+                returnObject['embeds'] = embed.createErrorEmbed(null, true);
+                console.error(error);
             }
 
-            return categories;
-
-        } catch(error){
-            console.error(error);
-            return embed.createErrorEmbed();
+            returnObject['numResults'] = 0;
         }
+        
+        return returnObject;
     }
 };

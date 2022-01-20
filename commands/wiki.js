@@ -6,29 +6,119 @@ const db = require('../personal_modules/database.module.js');
 
 //Import config
 const wikiConfig = require('../config.json').commands.wiki;
-const {prefix} = require('../config.json');
 
 module.exports = {
-    name: 'wiki',
-    cooldown: '5',
-    shortDesc: 'Search a wiki that is available on this server.',
-    description:
-        'This command can be used to search any registered wiki for info.' +
-        '\nUse a **wiki abbreviation** if you want to search for a specific wiki. You can see all wikis with `'+prefix+'list`. The default is the English Wikipedia.' +
-        '\nUse the **\'page\'** subcommand followed by a search term to search for a page title on the wiki;' +
-        '\nthe **\'category\'** subcommand to get a category page with category members (if you enter \'all\' or nothing you will get all categories);' +
-        '\nor the **\'search\'** subcommand to perform a exact text search on the wiki and get a list of pages.' +
-        '\nIf you omit the subcommand entirely I will first search for a category, then for a page and at last for pages containing your search.' +
-        '\nExample: `-wiki mc search creeper` - Search a minecraft wiki for all pages containing the word \'creeper\'.',
-    category: 'Wiki - Browsing',
-    usage: '[Wiki Abbreviation - Optional] [Subcommand - Optional] [Search]',
-    extraFunc: async (message) => {
+    
+    //The command for discord
+    data: {
+        type: 'CHAT_INPUT',
+        defaultPermission: true,
+        name: 'wiki',
+        description: 'Search a wiki that is available on this server.',
+        options: [
+            {
+                type: 'SUB_COMMAND',
+                name: 'page',
+                description: "Return wiki pages with titles matching your search.",
+                options: [
+                    {
+                        type: 'STRING',
+                        name: 'search',
+                        description: 'What to search for in page titles.',
+                        required: true
+                    },
+                    {
+                        type: 'STRING',
+                        name: 'wiki',
+                        description: 'The abbreviation of the wiki to be searched. When omitted, the default wiki is searched.',
+                        required: false,
+                        autocomplete: true
+                    },
+                ]
+            },
+            {
+                type: 'SUB_COMMAND',
+                name: 'category',
+                description: "Return wiki categories matching your search.",
+                options: [
+                    {
+                        type: 'STRING',
+                        name: 'search',
+                        description: 'What to search for in categories.',
+                        required: true
+                    },
+                    {
+                        type: 'STRING',
+                        name: 'wiki',
+                        description: 'The abbreviation of the wiki to be searched. When omitted, the default wiki is searched.',
+                        required: false,
+                        autocomplete: false
+                    },
+                ]
+            },
+            {
+                type: 'SUB_COMMAND',
+                name: 'search',
+                description: "Return wiki pages containing your searched phrase.",
+                options: [
+                    {
+                        type: 'STRING',
+                        name: 'search',
+                        description: 'What to search for on pages.',
+                        required: true
+                    },
+                    {
+                        type: 'STRING',
+                        name: 'wiki',
+                        description: 'The abbreviation of the wiki to be searched. When omitted, the default wiki is searched.',
+                        required: false,
+                        autocomplete: true
+                    },
+                ]
+            },
+            {
+                type: 'SUB_COMMAND',
+                name: 'all',
+                description: "Run all subcommands to search pages by their title/body and to search for categories.",
+                options: [
+                    {
+                        type: 'STRING',
+                        name: 'search',
+                        description: 'What to search for in page titles, categories and bodies.',
+                        required: true
+                    },
+                    {
+                        type: 'STRING',
+                        name: 'wiki',
+                        description: 'The abbreviation of the wiki to be searched. When omitted, the default wiki is searched.',
+                        required: false,
+                        autocomplete: true
+                    }
+                ]
+            },
+        ]
+    },
 
+    //Additional info for permissions and help command
+    category: 'Wiki',
+    longDescription:
+        'This command can be used to search any registered wiki for info.' +
+        '\nUse a **wiki abbreviation** if you want to search for a specific wiki. You can see all wikis with `/list`. The default is either the default wiki for the server or the English Wikipedia.' +
+        '\nUse the **\'page\'** subcommand to search for wiki pages with the searched title;' +
+        '\nthe **\'category\'** subcommand to search for matching categories and pages falling under these categories (if you enter \'all\' you will get all categories);' +
+        '\nor the **\'search\'** subcommand to search for wiki pages containing your search in their body.' +
+        '\nIf you the **\'all\'**  subcommand page titles, categories and bodies will all be searched.' +
+        '\nExample: `/wiki search mc  creeper` - Search a minecraft wiki for all pages containing the word \'creeper\'.',
+    usage: 'page/category/search/all [search] [wiki abbreviation - optional]',
+    
+    //Additional info for permissions and help command
+    dynamicUsage: async (interaction) => {
+        
         //Retrieve all of the wikis for this server
         let res;
         try{
             res = await db.query('select * from wiki where guild_id = $1',
-                [message.guild.id]);
+                [interaction.guild.id]);
         }
         catch{
             res = {rows: []};
@@ -36,243 +126,124 @@ module.exports = {
         return '**Possible wiki abbreviations are:** ' + res.rows.map(r => '`' + r.abbreviation + '`').join(', ') +
             '\n\n**Possible subcommands are:**\n\'page\' (search for a page)\n\'category\' (search for pages under a category)\n\'search\' (perform a text search in pages)'
     },
-    argsOpt: false,
-    guildOnly: false,
+    guildOnly: true,
     dmOnly: false,
-    delGuildMsg: false,
-    async execute(message, args) {
 
-        //When the first argument isn't 'page', 'category' or 'search',
-        //retrieve all available wikis for this guild and find the one that correspondents to the first argument
-        //When no is available, or en error occurs, use the default wiki
+    //Command code
+    async execute(interaction) {
+        const subcommand = interaction.options.getSubcommand();
+        const abbreviation = interaction.options.getString('wiki');
+        const search = interaction.options.getString('search');
+
+        //Defer reply
+        await interaction.deferReply();
+
+        //When an abbreviation for a wiki is given, find the wiki of this guild with that abbreviation
+        //When no is available, or an error occurs, report this back to the user
         let wikiInfo;
-        if(!['page', 'category', 'search'].includes(args[0])){
-            try{
+        if(abbreviation != null){
 
-                //Retrieve all wikis
-                let res = await db.query('select * from wiki where guild_id = $1',
-                    [message.guild.id]);
+            let res = await db.query('select * from wiki where guild_id = $1 and LOWER(abbreviation) = LOWER($2)',
+                [interaction.guild.id, abbreviation]);
+            wikiInfo = res.rows[0];
 
-                //See if the first argument correspondents to one of the wikis' abbreviations
-                wikiInfo = res.rows.find(w => w.abbreviation.toLowerCase() === args[0].toLowerCase());
-                if(wikiInfo == null){
-                    wikiInfo = helper.copy(wikiConfig);
-                    wikiInfo.api_path = wikiConfig.apiPaths[0]
-                } else {
-                    args.shift();
-                }
-
-            } catch(e) {
-                console.error(e);
-                wikiInfo = helper.copy(wikiConfig);
-                wikiInfo.api_path = wikiConfig.apiPaths[0]
-            }
+            if(!wikiInfo) return await interaction.reply({content: 'There is no wiki with that abbreviation for this server!', empephemeral: true});
+        
+        //When no abbreviation is given, try to retrieve the default wiki or else use the English wikipedia
         } else{
-            wikiInfo = helper.copy(wikiConfig);
-            wikiInfo.api_path = wikiConfig.apiPaths[0]
-        }
 
-        //Generate reply when no argument is left over and return.
-        if(args.length === 0){
-            return message.reply('Specify what you want so search for.');
+            let res = await db.query('select * from wiki where guild_id = $1 and "default" = $2',
+            [interaction.guild.id, true]);
+            wikiInfo = res.rows[0]
+
+            if(!wikiInfo){
+                wikiInfo = helper.copy(wikiConfig);
+                wikiInfo.api_path = wikiConfig.apiPaths[0];
+            }
         }
 
 
         //Depending on the subcommand either a list of suggestions to a specific page or the page itself is returned ('page');
         //a list of pages belonging to a certain category and/or category members of a certain category ('category');
         //or a list of pages containing the searched word ('search').
-        //When no subcommand is given but only a search term, the wiki is first searched by category, then page and then a text search.
-        //The switch cases each return discord embed(s) which are then send to the discord channel.
-        //A a Reaction Collector is also started to react to any input of the user to the embed (f.e. next/previous embed/page etc.).
+        //When the subcommand 'all', all will be searched.
+        //The if statements each return discord embed(s) which are then send to the discord channel.
+        //A message component collector is also started to react to any input of the user to the embed (f.e. next/previous embed/page etc.).
 
-        //Initiate embeds array
-        let embeds;
+        //Initiate object to save embeds and the number of results
+        let subEmbeds = {};
+        let resultsNum = {};
 
-        //Connect arguments with Into a single array. Also only add the connected arguments to the array, if it's not an empty space.
-        const searchArgs = args.splice(1).join(' ');
-        if(searchArgs.length){
-            args.push(searchArgs);
+        //Get specific page info in the form of an embed from the wiki using the wiki api
+        let returnObject;
+        if(['page', 'all'].includes(subcommand)){
+            returnObject = await wiki.getPageListEmbed(search, wikiInfo);
+            subEmbeds['page'] = returnObject.embeds;
+            resultsNum['page'] = returnObject.numResults;
         }
 
-        switch (args[0].toLowerCase()) {
+        //Get a list of categories or category members incorporated in a embed using the wiki api.
+        if(['category', 'all'].includes(subcommand)){
+            returnObject = await wiki.getCategoryListEmbed(search, wikiInfo, subcommand != 'all');
+            subEmbeds['category'] = returnObject.embeds;
+            resultsNum['category'] = returnObject.numResults;
+        }
 
-            //Get specific page info in the form of an embed from the wiki using the wiki api
-            case 'page':
+        //Perform a text search on the wiki and return any results in the form of an embed
+        if(['search', 'all'].includes(subcommand)){
+            returnObject = await wiki.getSearchListEmbed(search, wikiInfo);
+            subEmbeds['search'] = returnObject.embeds;
+            resultsNum['search'] = returnObject.numResults;
+        }
 
-                //Generate reply when no argument is given and break out of the switch.
-                if(args.length === 1){
-                    return message.reply('Specify the page you want to search for.');
-                }
-
-                //Retrieve title suggestions
-                let titles = await wiki.getTitles(args[1], wikiInfo);
-
-                //If there are no results available save a default message into the array
-                if (titles == null) {
-                    embeds = [{embed: embed.createEmbed(
-                        'Wiki page: ' + args[1],
-                        'That page doesn\'t exist yet, do you wish to [create it](' + helper.encDiscordURL(wikiInfo.url + wikiConfig.pagePath + args[1] + '?action=edit') + ')?',
-                            helper.encDiscordURL(wikiInfo.url + wikiConfig.pagePath + args[1]),
-                            wikiInfo.logo,
-                            wikiConfig.embed.color),
-                    }];
-                }
-
-                //If there is only one result create only the embed(s) for that page
-                else if(titles.length === 1){
-                    embeds = await wiki.getPageEmbed(message, titles[0].title, null, wikiInfo)
-                }
-
-                //Otherwise create embed(s) which display all search results
-                else{
-                    embeds = embed.createListEmbed(
-                        wikiConfig.embed,
-                        'Returned pages for: ' + args[1],
-                        'The following pages match your search results. Press one of the emojis (1⃣-🔟) to load more info of that page.',
-                        helper.encDiscordURL(wikiInfo.url + wikiConfig.searchPath + args[1] + '&title=Special%3ASearch&go=Go'),
-                        wikiInfo.logo,
-                        'Results',
-                        null,
-                        titles);
-                }
-
-                break;
-
-
-            //Get a list of categories or category members incorporated in a embed using the wiki api.
-            case 'category':
-
-                //Initiate embed title and description for when there is more than one returned category.
-                let embedTitle;
-                let embedDescription;
-
-                //If no arguments are specified or the argument 'all', make the args[1] element een empty string.
-                //Also change title and description for multiple category results accordingly.
-                if(!args[1] || args[1] === 'all'){
-                    args[1] = '';
-                    embedTitle = 'All categories';
-                    embedDescription = '';
-                } else{
-                    embedTitle = 'Returned categories for: ' + args[1];
-                    embedDescription = 'The following categories match your search results.';
-                }
-
-                //Retrieve category suggestions
-                let categories = await wiki.getCategories(args[1], wikiInfo);
-
-                //If there are no results available save a default message into the array
-                if (categories == null) {
-                    embeds = [{embed: embed.createEmbed(
-                            'Category: ' + args[1],
-                            'That category doesn\'t exist yet, do you wish to [create it](' + helper.encDiscordURL(wikiInfo.url + wikiConfig.pagePath + 'Category:' + args[1] + '?action=edit') + ')?',
-                            helper.encDiscordURL(wikiInfo.url + wikiConfig.pagePath + 'Category:' + args[1]),
-                            wikiInfo.logo,
-                            wikiConfig.embed.color),
-                    }];
-                }
-
-                //If there is only one category create only the embed(s) for that category
-                else if(categories.length === 1){
-                    embeds = await wiki.getCategoryEmbed(message, categories[0].title, null, wikiInfo)
-                }
-
-                //Otherwise create embed(s) which display all category results
-                else{
-                    embeds = embed.createListEmbed(
-                        wikiConfig.embed,
-                        embedTitle,
-                         embedDescription + 'Press one of the emojis (1⃣-🔟) to load the pages belonging to that category.',
-                        helper.encDiscordURL(wikiInfo.url + wikiConfig.searchPath + 'Category:' + args[1] + '&title=Special%3ASearch&go=Go'),
-                        wikiInfo.logo,
-                        'Results',
-                        null,
-                        categories);
-                }
-
-                break;
-
-
-
-            //Perform a text search on the wiki and return any results in the form of an embed
-            case 'search':
-
-                //Generate reply when no argument is given and break out of the switch.
-                if(args.length === 1){
-                    return message.reply('Specify a search term.');
-                }
-
-                //Retrieve search embed array
-                embeds = await wiki.getSearchEmbed(message, args[1], null, wikiInfo);
-                break;
-
-
-
-            //When only a search term is specified, first search for the category on the wiki. In case of no results, look for a page.
-            //If that doesn't return anything perform a text search. In all cases, return the appropriate embed.
-            default:
-
-                //Connect all arguments with into a single string. This is the search term.
-                let arg = args.join(' ');
-
-                //Retrieve category suggestions
-                let categories2 = await wiki.getCategories(arg, wikiInfo);
-
-                //If there results available get the category embeds.
-                //Else look for page suggestions.
-                if (categories2 != null) {
-
-                    //If there is only one category create only the embed(s) for that category
-                    if(categories2.length === 1){
-                        embeds = await wiki.getCategoryEmbed(message, categories2[0].title, null, wikiInfo)
-                    }
-
-                    //Otherwise create embed(s) which display all category results
-                    else{
-                        embeds = embed.createListEmbed(
-                            wikiConfig.embed,
-                            'Returned categories for: ' + arg,
-                            'The following categories match your search results. Press one of the emojis (1⃣-🔟) to load the pages belonging to that category.',
-                            helper.encDiscordURL(wikiInfo.url + wikiConfig.searchPath + 'Category:' + arg + '&title=Special%3ASearch&go=Go'),
-                            wikiInfo.logo,
-                            'Results',
-                            null,
-                            categories2);
-                    }
-
-                } else{
-
-                    let titles = await wiki.getTitles(arg, wikiInfo);
-
-                    //Make category embeds when there are results.
-                    //Else get a search embed.
-                    if (titles != null) {
-
-                        //If there is only one result create only the embed(s) for that page
-                        if(titles.length === 1){
-                            embeds = await wiki.getPageEmbed(message, titles[0].title, null, wikiInfo)
-                        }
-
-                        //Otherwise create embed(s) which display all search results
-                        else{
-                            embeds = embed.createListEmbed(
-                                wikiConfig.embed,
-                                'Returned pages for: ' + args,
-                                'The following pages match your search results. Press one of the emojis (1⃣-🔟) to load more info of that page.',
-                                helper.encDiscordURL(wikiInfo.url + wikiConfig.searchPath + arg + '&title=Special%3ASearch&go=Go'),
-                                wikiInfo.logo,
-                                'Results',
-                                null,
-                                titles);
-                        }
-
-                    } else{
-                        embeds = await wiki.getSearchEmbed(message, arg, null, wikiInfo);
-                    }
-                }
+        //If the subcommand is not 'all' return the embeds of the specific subcommand
+        let embeds;
+        if(subcommand != 'all'){
+            embeds = subEmbeds[subcommand];
+        
+        //Otherwise create a list embed displaying the number of results for each subcommand
+        } else {
+            listItems = []
+            titlePart = {
+                page: 'page search by title',
+                category: 'category search',
+                search: 'page search by body'
+            }
+            for(const [key, value] of Object.entries(subEmbeds)){
+                listItems.push({
+                    title: (resultsNum[key] != null? resultsNum[key] + ' results for ' : 'Results for ' ) + titlePart[key] + ' using `/wiki ' + key + '`',
+                    url: value[0].embed.url,
+                    subEmbeds: value
+                });
+            }
+            embeds = embed.createListEmbed(
+                wikiConfig.embed,
+                'Returned pages/categories for: ' + search,
+                'Press one of the emoji buttons (1⃣-🔟) to load the results belonging to that subcommand.',
+                helper.encDiscordURL(wikiInfo.url + '/wiki/Special:Search?query=' + search + '&scope=internal&navigationSearch=true'),
+                wikiInfo.logo,
+                'Results',
+                null,
+                listItems
+            );
         }
 
         //Send the embed in a message
-        return embed.sendEmbed(wikiConfig.embed, message, embeds,
-            [[wiki.getCategoryEmbed, /^Category:/i, wikiInfo], [wiki.getPageEmbed, /.+/, wikiInfo]]);
+        const menuEmbed = new embed.MenuEmbed(wikiConfig.embed, interaction, embeds);
+        menuEmbed.start()
+    },
+
+
+    //Function for autocompletions
+    async autocomplete(currentArgument, currentValue, interaction){
+
+        //Retrieve all wikis registrered for this server
+        const res = await db.query('select name, abbreviation, url from wiki where guild_id = $1', [interaction.guild.id]);
+
+        //Create and return suggestions  
+        return res.rows
+            .map(row => row.abbreviation)
+            .filter(abr => abr.toLowerCase().startsWith(currentValue.toLowerCase()))
+            .sort();
     }
 };
