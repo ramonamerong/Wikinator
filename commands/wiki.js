@@ -107,7 +107,7 @@ module.exports = {
         '\nUse the **\'page\'** subcommand to search for wiki pages with the searched title;' +
         '\nthe **\'category\'** subcommand to search for matching categories and pages falling under these categories (if you enter \'all\' you will get all categories);' +
         '\nor the **\'search\'** subcommand to search for wiki pages containing your search in their body.' +
-        '\nIf you the **\'all\'**  subcommand page titles, categories and bodies will all be searched.' +
+        '\nIf you use the **\'all\'**  subcommand page titles, categories and bodies will all be searched.' +
         '\nExample: `/wiki search mc  creeper` - Search a minecraft wiki for all pages containing the word \'creeper\'.',
     usage: 'page/category/search/all [search] [wiki abbreviation - optional]',
     

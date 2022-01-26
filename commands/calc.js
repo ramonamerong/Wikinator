@@ -13,8 +13,8 @@ module.exports = {
         options: [
             {
                 type: 'STRING',
-                name: 'emoji',
-                description: 'The emoji to randomly search for.',
+                name: 'expression',
+                description: 'The mathematical expression to solve',
                 required: false,
             }
         ]
@@ -23,15 +23,15 @@ module.exports = {
     //Additional info for permissions and help command
     longDescription: 'Use this command to calculate a simple arithmetical sum, only containing addition \'+\', subtraction \'-\', multiplication \'*\', division \'/\' and power \'^\'' +
         ' operators. You can also enclose something in brackets \'()\' to indicate that that should be calculated first.' +
-        '\nExample: `'+prefix+'calc (2+3) * 5`',
-    usage: '[arithmetic sum]',
+        '\nExample: `/calc (2+3) * 5`',
+    usage: '[mathematical expression]',
     guildOnly: false,
     adminOnly: false,
     dmOnly: false,
 
     //Command code
-    async execute(message, args){
-        const sum = args.join('');
-        message.reply('Answer: `' + calc.solveString(sum) + '`');
+    async execute(interaction){
+        const expression = args.join('');
+        await interaction.reply('Answer: `' + calc.solveString(expression) + '`');
     }
 };
