@@ -10,13 +10,29 @@ module.exports = {
         //Remove any unnecessary brackets
         string = this.removeBrackets(string);
 
-        //Replace any remaining brackets with $i
-        let brackets = string.match(/\(+[^()]*\)+/g);
+        //Keep replacing the smallest brackets remaining brackets with $i
+        let brackets = [];
         let i = 0;
-        if(brackets != null){
-            for(const br of brackets){
-                string = string.replace(br, '$'+i);
-                i++
+        newBrackets = true;
+        while(newBrackets){
+            newBrackets = string.match(/\([^()]*\)/g);
+
+            if(newBrackets != null){
+                for(let br of newBrackets){
+
+                    //Replace bracket in string with identifier
+                    string = string.replace(br, '$'+i);
+
+                    //Substitute any subbrackets within the bracket with their value
+                    subBrackets = br.match(/\$\d+/g);
+                    if(subBrackets != null)
+                        for(const sbr of subBrackets)
+                            br = br.replace(sbr, brackets[sbr.replace('$', '')])
+
+                    //Save the bracket
+                    i++;
+                    brackets.push(br);
+                }
             }
         }
 

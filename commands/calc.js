@@ -14,8 +14,8 @@ module.exports = {
             {
                 type: 'STRING',
                 name: 'expression',
-                description: 'The mathematical expression to solve',
-                required: false,
+                description: 'The mathematical expression to solve.',
+                required: true,
             }
         ]
     },
@@ -31,7 +31,12 @@ module.exports = {
 
     //Command code
     async execute(interaction){
-        const expression = args.join('');
-        await interaction.reply('Answer: `' + calc.solveString(expression) + '`');
+        const expression = interaction.options.getString('expression');
+        try{
+            await interaction.reply('Expression: `' + expression + '`\nAnswer: `' + calc.solveString(expression) + '`');
+        } catch(error){
+            if(error.message.includes('brackets'))
+                await interaction.reply({content: error.message, ephemeral: true}).catch(console.error);
+        }
     }
 };
