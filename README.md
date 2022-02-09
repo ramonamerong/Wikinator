@@ -25,7 +25,7 @@
   </li>
   <li>
     <code>/add [wiki abbreviation] [wiki url] [default]</code>
-      (This command is limited to the owner and admins of a server) Use this command to add (or update when using the same abbreviation) a wiki to this server. The provided wiki abbreviation can be used in conjunction with the <code>/wiki</code> command to search that wiki. The wiki url must be of the format <code>https://example.com</code>. You can also set the wiki as the default for the server so the abbreviation is not needed when using `/wiki`.
+      (This command is limited to the owner and admins of a server) Use this command to add (or update when using the same abbreviation) a wiki to this server. The provided wiki abbreviation can be used in conjunction with the <code>/wiki</code> command to search that wiki. The wiki url must be of the format <code>https://example.com</code>. You can also set the wiki as the default for the server so the abbreviation is not needed when using <code>/wiki</code>.
   </li>
   <li>
     <code>/remove [wiki abbreviation, name or url]</code>
